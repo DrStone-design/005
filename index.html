@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Ai-Tronlink DeFi  DApp - BSC</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.umd.min.js" type="text/javascript"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: auto; background: #f5f5f5; }
+        h1 { color: #1e88e5; }
+        input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #ccc; }
+        button { background: #1e88e5; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:hover { background: #1565c0; }
+        #status { color: #d32f2f; margin-top: 10px; min-height: 40px; }
+        .info { color: #555; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <h1>BSC Defi-Tronlink-Saving 协议</h1>
+    <p class="info">在 TokenPocket 钱包的“发现”中打开，链必须切换到 BSC（链ID: 56）</p>
+
+    <button id="connectBtn">连接钱包</button>
+    <p>当前地址: <span id="account">-</span></p>
+
+    <input type="text" id="amount" placeholder="输入存款数量（例如 100）" />
+    
+    <button id="approveBtn">1. 授权合约（Approve）</button>
+    <button id="depositBtn">2. 存款（Deposit）</button>
+
+    <p id="status">-</p>
+
+    <script>
+        // BSC 配置
+        const CHAIN_ID = 56;                    // BSC Mainnet
+        const TOKEN_ADDRESS = "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56"; // BUSD (BSC)
+        // 如果你想用 USDT (BSC)，可以用: "0x55d398326f99059fF775485246999027B3197955"
+        const CONTRACT_ADDRESS = "0x3508d14f0f3642d326010d8226CDE77EF60a06d"; // ← 部署后填入
+
+        // ERC20 最小 ABI
+        const ERC20_ABI = [
+            "function approve(address spender, uint256 amount) public returns (bool)",
+            "function allowance(address owner, address spender) view returns (uint256)",
+            "function balanceOf(address account) view returns (uint256)"
+        ];
+
+        // 你的存款合约 ABI
+        const CONTRACT_ABI = [
+            "function deposit(uint256 amount) public"
+        ];
+
+        let provider, signer, account, tokenContract, defiContract;
+
+        // 连接钱包
+        document.getElementById("connectBtn").onclick = async () => {
+            if (!window.ethereum) {
+                alert("请在 TokenPocket 或支持 WalletConnect 的浏览器中打开！");
+                return;
+            }
+
+            try {
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                
+                // 尝试切换到 BSC（如果用户不在 BSC 上）
+                try {
+                    await window.ethereum.request({
+                        method: "wallet_switchEthereumChain",
+                        params: [{ chainId: "0x38" }], // 0x38 = 56
+                    });
+                } catch (switchError) {
+                    // 如果链不存在，可以添加（可选）
+                    if (switchError.code === 4902) {
+                        await window.ethereum.request({
+                            method: "wallet_addEthereumChain",
+                            params: [{
+                                chainId: "0x38",
+                                chainName: "Binance Smart Chain",
+                                nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+                                rpcUrls: ["https://bsc-dataseed.binance.org/"],
+                                blockExplorerUrls: ["https://bscscan.com"]
+                            }]
+                        });
+                    } else {
+                        throw switchError;
+                    }
+                }
+
+                await provider.send("eth_requestAccounts", []);
+                signer = provider.getSigner();
+                account = await signer.getAddress();
+                
+                document.getElementById("account").innerText = account;
+                document.getElementById("status").innerText = "钱包连接成功！";
+
+                tokenContract = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, signer);
+                defiContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+            } catch (e) {
+                document.getElementById("status").innerText = "连接失败: " + e.message;
+            }
+        };
+
+        // 授权
+        document.getElementById("approveBtn").onclick = async () => {
+            if (!account) return alert("请先连接钱包");
+
+            const inputAmount = document.getElementById("amount").value;
+            if (!inputAmount || isNaN(inputAmount) || Number(inputAmount) <= 0) {
+                alert("请输入有效的存款数量");
+                return;
+            }
+
+            try {
+                // BUSD 18 位小数
+                const amount = ethers.utils.parseUnits(inputAmount, 18);
+                
+                document.getElementById("status").innerText = "正在发送授权交易...";
+
+                const tx = await tokenContract.approve(CONTRACT_ADDRESS, amount);
+                await tx.wait();
+
+                document.getElementById("status").innerText = "授权成功！现在可以存款了";
+            } catch (e) {
+                document.getElementById("status").innerText = "授权失败: " + (e.reason || e.message);
+            }
+        };
+
+        // 存款
+        document.getElementById("depositBtn").onclick = async () => {
+            if (!account) return alert("请先连接钱包");
+
+            const inputAmount = document.getElementById("amount").value;
+            if (!inputAmount || isNaN(inputAmount) || Number(inputAmount) <= 0) {
+                alert("请输入有效的存款数量");
+                return;
+            }
+
+            try {
+                const amount = ethers.utils.parseUnits(inputAmount, 18);
+                
+                document.getElementById("status").innerText = "正在发送存款交易...";
+
+                const tx = await defiContract.deposit(amount);
+                await tx.wait();
+
+                document.getElementById("status").innerText = "存款成功！";
+            } catch (e) {
+                document.getElementById("status").innerText = "存款失败: " + (e.reason || e.message);
+            }
+        };
+    </script>
+</body>
+</html>
